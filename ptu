@@ -1,0 +1,60 @@
+{
+
+  double unix_time, pres;
+  int ind = 0;
+  file = "/disk/alpaca/data/em/BMW/data/ptu-xxxx.txt";
+
+  ifstream data;
+
+  double timearr[300];
+  double ptu[300];
+  double hyg[300];
+  string date;
+
+  data.open(file);
+
+  while (!data.eof()){
+
+    string ymd, hms, sqls, tmp;
+    data >> ymd >> hms;
+    
+    if (ymd == "") break;
+    
+    sqls = ymd.substr(0,4) + "-" + ymd.substr(5,2) + "-" + ymd.substr(8,2) + " " + hms;
+    date = ymd.substr(0,4) + "/" + ymd.substr(5,2) + "/" + ymd.substr(8,2);
+    timearr[ind] = TDatime(sqls.c_str()).Convert();
+    
+    for (int i = 0; i < 2; i++)
+      data >> tmp;
+    
+    data >> ptu[ind];
+
+    for (int i = 0; i < 6; i++) {
+      data >> tmp;
+      if (i == 4 && tmp.size() == 3) 
+        data >> tmp;
+    }
+
+
+    ind++;
+  }
+
+  TGraph *gr = new TGraph(ind - 1, timearr, ptu);
+  TCanvas *c = new TCanvas("c1", "Value vs Time Plot", 200, 10, 700, 500);
+  
+  gr->Draw("APL");
+
+  gr->GetXaxis()->SetTimeDisplay(1);
+  gr->GetXaxis()->SetTimeFormat("%m/%d %H:%M");
+  gr->GetXaxis()->SetNdivisions(507, true);
+  gr->GetXaxis()->SetTimeOffset(0);
+  
+  string title = "Air Pressure over time " + date + "; Universal Time; Air Pressure [hPa]";
+  gr->SetTitle(title.c_str());
+  
+  c->Modified();
+  c->Update();
+    
+	c->SaveAs("count_pdf/yyyy/yyyy_ptu.png");
+  
+}

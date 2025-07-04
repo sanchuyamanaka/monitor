@@ -1,0 +1,23 @@
+set terminal pngcairo size 1536,864
+set output "/home/sanchu/monitor///count_pdf/xxxx/any2cluster_xxxx.png"
+
+set key top below
+
+#set term x11
+
+set xlabel "Local time()"
+set ylabel "# of count"
+#set xlabel font "Helvetica, 30" 
+#set ylabel font "Helvetica, 30" 
+set yrange [0:200]
+set xdata time
+set timefmt "%Y-%m-%d %H:%M:%S.6"
+set format x "%H:%M:%S" 
+#set x range[20:03:40:20:03:45]
+
+
+plot "<cat /disk/alpaca/data/as/stdata/xxxx/xxxx*.d | awk '{print $3,$4,($10),sqrt($10)}'" using 1:3 title 'any2 clustered' with line lc 5
+
+#pause -1
+
+unset output

@@ -1,0 +1,74 @@
+{
+	gStyle->SetPalette(53);
+	gStyle->SetOptStat(0);
+	
+	int X[100]={}, Y[100]={};
+	int dum1, dum2, dum3;
+	int d_number, count[100], n_data;
+	string time1, time2;
+
+	ifstream data("/home/sanchu/monitor///count/zzzz/count_zzzz01.d.bz2.dat");
+	data >> dum1 >> dum2 >> dum3;
+
+	int i=0;
+	
+	while(!data.eof()){
+		data >> time1 >> time2 >> d_number >> count[i];
+		X[i] = int(d_number/100);
+		Y[i] = d_number-X[i]*100;
+		i++;
+	}
+	n_data = i;
+
+	TCanvas *c1 = new TCanvas("c1", "", 50, 50, 500, 500);
+
+	TH2D *h2 = new TH2D("h2", "2Dmap_of_CH-XXYY_1st_#rate_of_the_day", 100, 36.0, 64.0, 100, 36.0, 64.0);
+	h2->GetXaxis()->SetTitle("XX");
+	h2->GetYaxis()->SetTitle("YY");
+	
+	h2->Draw("same");
+
+	TMarker *mark[100];
+
+	for (int j=0; j<n_data; j++){
+
+    if (X[j]==0) continue;
+
+		mark[j] = new TMarker();
+		mark[j]->SetMarkerStyle(20);
+		mark[j]->SetMarkerSize(1+4.0/40000.0*(count[j]-40000.));
+    mark[j]->SetMarkerColor(51+51.0/40000.0*(count[j]-40000.));
+
+		mark[j]->DrawMarker(X[j],Y[j]);
+		
+	}
+
+  auto tb1 = new TBox(41, 43, 49, 51);
+  tb1->SetFillStyle(0);
+  tb1->SetLineColor(18);
+  tb1->SetLineWidth(2);
+  tb1->Draw();
+
+  auto tb2 = new TBox(43, 51, 51, 59);
+  tb2->SetFillStyle(0);
+  tb2->SetLineColor(18);
+  tb2->SetLineWidth(2);
+  tb2->Draw("same");
+
+  auto tb3 = new TBox(51, 49, 59, 57);
+  tb3->SetFillStyle(0);
+  tb3->SetLineColor(18);
+  tb3->SetLineWidth(2);
+  tb3->Draw("same");
+
+  auto tb4 = new TBox(49, 41, 57, 49);
+  tb4->SetFillStyle(0);
+  tb4->SetLineColor(18);
+  tb4->SetLineWidth(2);
+  tb4->Draw("same");
+  
+
+	c1->SaveAs("/home/sanchu/monitor///count_pdf/zzzz/zzzz_2d_hist.png");
+
+}
+

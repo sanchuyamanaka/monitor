@@ -1,0 +1,187 @@
+void read_hmp(const char *filename, std::vector<std::vector<double>> &obs, std::vector<double> &times) {
+  const int data_max = 300;
+  int i = 0;
+
+  times.resize(data_max);
+  std::vector<double> temps(data_max);
+  std::vector<double> hums(data_max);
+  std::vector<double> tds(data_max);
+
+  ifstream data;
+  data.open(filename);
+
+  while(!data.eof()) {
+    string tmp, time1, time2, sqlc;
+    double temp, hum, td;
+
+    data >> time1 >> time2;
+    if (time1.size() == 0) break;
+    time1[4] = '-';
+    time1[7] = '-';
+    sqlc = time1 + " " + time2;
+    times[i] = TDatime(sqlc.c_str()).Convert();
+
+    data >> tmp >> tmp;
+    data >> temp >> tmp;
+    data >> tmp >> hum >> tmp;
+    data >> tmp >> td >> tmp;
+
+    temps[i] = temp;
+    hums[i] = hum;
+    tds[i] = td;
+
+    i++;
+  }
+
+  temps.resize(i);
+  hums.resize(i);
+  tds.resize(i);
+  times.resize(i);
+  
+  obs[0] = temps;
+  obs[1] = hums;
+  obs[2] = times;
+}
+
+void read_ptu(const char *filename, std::vector<std::vector<double>> &obs, std::vector<double> &times) {
+  const int data_max = 300;
+  int i = 0;
+
+  times.resize(data_max);
+  std::vector<double> press(data_max);
+  std::vector<double> temps(data_max);
+  std::vector<double> hums(data_max);
+
+  ifstream data;
+  data.open(filename);
+
+  while(!data.eof()) {
+    string tmp, time1, time2, sqlc;
+    double pres, temp, hum;
+
+    data >> time1 >> time2;
+    if (time1.size() == 0) break;
+    time1[4] = '-';
+    time1[7] = '-';
+    sqlc = time1 + " " + time2;
+    times[i] = TDatime(sqlc.c_str()).Convert();
+
+    data >> tmp >> tmp;
+    data >> pres >> tmp;
+    data >> tmp >> temp >> tmp;
+    data >> tmp;
+    if (tmp.size() == 3) {
+      data >> hum;
+    } else {
+      hum = stod(tmp.substr(4, tmp.size() - 3));
+    }
+
+    data >> tmp;
+
+    press[i] = pres;
+    temps[i] = temp;
+    hums[i] = hum;
+
+    i++;
+  }
+
+  times.resize(i);
+  press.resize(i);
+  temps.resize(i);
+  hums.resize(i);
+  
+  obs[0] = press;
+  obs[1] = temps;
+  obs[2] = hums;
+}
+
+void tmp_ptu_temp() {
+
+  vector<vector<double>> obs(4); 
+  vector<vector<double>> obs2(4); 
+  vector<double> times, times2;
+
+  const char *ptufile = "/disk/alpaca/data/em/BMW/data/ptu-20250618.txt";
+  const char *hmpfile = "/disk/alpaca/data/em/BMW/data/hmp-20250618.txt";
+  read_ptu(ptufile, obs, times);
+  read_hmp(hmpfile, obs2, times2);
+
+  TTimeStamp time_front = TTimeStamp(times[0], 0, 0);
+  TTimeStamp today = TTimeStamp((UInt_t)time_front.GetDate(0), 0u, 0u, 0);
+  TTimeStamp delta = TTimeStamp(1970, 1, 2, 0, 0, 0);
+  TTimeStamp tomorrow;
+  today.Copy(tomorrow);
+  tomorrow.Add(delta);
+
+  string date = tomorrow.AsString("s");
+  date = date.substr(0,11);
+  string title = "Temperature over time " + date + "; Universal Time; Temperature [C]";
+
+  TGraph *gr = new TGraph(times.size(), &times[0], &obs[1][0]);
+  TGraph *gr2 = new TGraph(times2.size(), &times2[0], &obs2[0][0]);
+  TCanvas *c = new TCanvas("c1", "Value vs Time Plot", 200, 10, 700, 500);
+  
+  gr->SetTitle("ptu temperature");
+  gr->SetLineColor(kBlue);
+  gr2->SetTitle("hmp temperature");
+
+  TMultiGraph *mg = new TMultiGraph();
+  mg->Add(gr);
+  mg->Add(gr2);
+  mg->SetTitle(title.c_str());
+
+  mg->Draw("ALP");
+  c->SetBottomMargin(0.2);
+
+  mg->GetXaxis()->SetRangeUser(today.GetSec(), tomorrow.GetSec());
+  mg->GetXaxis()->SetTimeDisplay(1);
+  mg->GetXaxis()->SetTimeFormat("%m/%d %H:%M");
+  mg->GetXaxis()->SetNdivisions(805, true);
+  mg->SetMinimum(-10);
+  mg->SetMaximum(30);
+
+  TLegend *leg = new TLegend(0.1, 0.8, 0.3, 0.9);
+  leg->AddEntry(gr, "outside temperature", "l");
+  leg->AddEntry(gr2, "room temperature", "l");
+  leg->Draw();
+
+  double xmin = today.GetSec();
+  double xmax = tomorrow.GetSec();
+  // double ypos = gPad->GetUymin() - 1.1 * (gPad->GetUymax() - gPad->GetUymin()); 
+  double ypos = -15;
+  TGaxis *axis = new TGaxis(today.GetSec(), ypos, tomorrow.GetSec(), ypos, 0, 86400, 805, "t");
+  axis->SetTimeFormat("%m/%d %H:%M");
+  axis->SetTimeOffset(TDatime(today.GetSec() - 4 * 3600).Convert());
+  axis->SetLabelSize(0.03);
+  axis->SetLabelFont(42);
+  axis->SetTitleSize(0.03);
+  axis->SetTitleFont(42);
+  axis->SetName("axis2");
+  axis->SetTitle("Local Time");
+  axis->Draw();
+
+  c->Modified();
+  c->Update();
+    
+	c->SaveAs("count_pdf/250618/250618_ptu_temp.png");
+  c->Clear();
+  c->Update();
+  
+  auto gr3 = new TGraph(times.size(), &times[0], &obs[2][0]);
+  gr3->SetTitle("Ambient Humidity 250618");
+  gr3->GetXaxis()->SetTimeDisplay(1);
+  gr3->GetXaxis()->SetTimeFormat("%m/%d %H:%M");
+  gr3->GetXaxis()->SetNdivisions(805, true);
+  gr3->GetXaxis()->SetRangeUser(today.GetSec(), tomorrow.GetSec());
+  gr3->GetXaxis()->SetTitleOffset(0.6);
+  gr3->GetXaxis()->SetTitle("UT");
+  gr3->GetYaxis()->SetTitle("Humidity (%)");
+  gr3->SetMinimum(0);
+  gr3->SetMaximum(100);
+  gr3->Draw();
+
+  c->Modified();
+  c->Update();
+	c->SaveAs("count_pdf/250618/250618_ptu_hum.png");
+  
+}
