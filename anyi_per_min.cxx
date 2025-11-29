@@ -2,6 +2,8 @@
 #include<string>
 #include<iostream>
 #include<fstream>
+#include<sstream>
+#include<iomanip>
 
 #include "TGraph.h"
 #include "TDatime.h"
@@ -25,23 +27,32 @@ void read_st(string filename, std::vector<std::vector<double>> &anys, std::vecto
 
   cout << filename << "\n";
 
-  ifstream data;
-  data.open(filename);
+  ifstream data(filename);
+  string line;
 
-  while(!data.eof()) {
+  while (std::getline(data, line)) {
+    if (line.empty()) continue;
+
+    std::istringstream iss(line);
+
     string tmp, time1, time2, sqlc;
-    // any1, any2, any3, any4, total eventsの順で並んでいる -> total events = 0 ならcalib, 前後1イベントを取り除く
-    int ns, any1, any2, any3, any4, any2_alt, tot_ev, prev_totev;
+    int ns, any1, any2, any3, any4, any2_alt, tot_ev;
+    int ch5644any1 = 0, ch5656any1 = 0;
 
-    data >> tmp >> tmp >> time1 >> time2 >> tmp;
-    data >> any1 >> any2 >> any3 >> any4 >> any2_alt;
-    data >> tot_ev >> tmp;
+    if (!(iss >> tmp >> tmp >> time1 >> time2 >> tmp)) continue;
+    if (!(iss >> any1 >> any2 >> any3 >> any4 >> any2_alt)) continue;
+    if (!(iss >> tot_ev >> tmp)) continue;
+
+    if (iss >> ch5644any1 >> ch5656any1) {
+      for (int k = 0; k < 6; ++k) {
+        if (!(iss >> tmp)) break;
+      }
+    }
 
     if (tot_ev == 0) {
       if (prev_totev != 0) {
-        // 以前のtotevがnon zero -> iを1個減らしてcalibration前のデータを上書きするようにする i < 0ならiを0にする
         i--;
-        i = max(i, 0);
+        if (i < 0) i = 0;
       }
       prev_totev = tot_ev;
       continue;
@@ -53,6 +64,8 @@ void read_st(string filename, std::vector<std::vector<double>> &anys, std::vecto
     }
 
     prev_totev = tot_ev;
+
+    if (i >= data_max) break;
 
     any1s[i] = any1;
     any2s[i] = any2;
@@ -70,12 +83,13 @@ void read_st(string filename, std::vector<std::vector<double>> &anys, std::vecto
     i++;
   }
 
-  any1s.resize(i - 1);
-  any2s.resize(i - 1);
-  any3s.resize(i - 1);
-  any4s.resize(i - 1);
-  any2_alts.resize(i - 1);
-  
+  any1s.resize(i);
+  any2s.resize(i);
+  any3s.resize(i);
+  any4s.resize(i);
+  any2_alts.resize(i);
+  times.resize(i);
+
   anys[0] = any1s;
   anys[1] = any2s;
   anys[2] = any3s;
@@ -93,25 +107,51 @@ vector<string> gen_stnames(double date) {
   TDatime today = TDatime(int(date));
   string ystd_str = ystd.AsSQLString();
   string date_str = today.AsSQLString();
-  // はじめの"20"と" HH:MM:SS"を削除
+
   ystd_str = ystd_str.substr(2, ystd_str.size() - 11);
   date_str = date_str.substr(2, date_str.size() - 11);
-  
+
   ystd_str = ystd_str.substr(0, 2) + ystd_str.substr(3, 2) + ystd_str.substr(6, 2);
   date_str = date_str.substr(0, 2) + date_str.substr(3, 2) + date_str.substr(6, 2);
-  
-  filenames.push_back((base + ystd_str + "/" + ystd_str + "06" + suffix).c_str());
-  
-  for (int i = 0; i < 6; i++) {
-    string filename = base + date_str + "/" + date_str + "0" + to_string(i + 1) + suffix;
-    filenames.push_back(filename.c_str());
+
+  auto find_max_index = [&](const string &dstr) {
+    int max_idx = 0;
+    string dir = base + dstr + "/";
+    for (int i = 1; i <= 99; ++i) {
+      std::ostringstream oss;
+      oss << setw(2) << setfill('0') << i;
+      string idx = oss.str();
+      string fname = dir + dstr + idx + suffix;
+      ifstream f(fname.c_str());
+      if (!f.good()) break;
+      max_idx = i;
+    }
+    return max_idx;
+  };
+
+  int max_prev = find_max_index(ystd_str);
+  if (max_prev > 0) {
+    std::ostringstream oss;
+    oss << setw(2) << setfill('0') << max_prev;
+    string idx = oss.str();
+    string fname = base + ystd_str + "/" + ystd_str + idx + suffix;
+    filenames.push_back(fname);
   }
-  
+
+  int max_today = find_max_index(date_str);
+  for (int i = 1; i <= max_today; ++i) {
+    std::ostringstream oss;
+    oss << setw(2) << setfill('0') << i;
+    string idx = oss.str();
+    string fname = base + date_str + "/" + date_str + idx + suffix;
+    filenames.push_back(fname);
+  }
+
   return filenames;
 }
-  
+
 void gen_summed(double datetime, vector<string> filenames, int bin_sec, vector<double> &sp_time, vector<vector<double>> &sums) {
-  
+
   sums.resize(5);
   for (int i = 0; i < 5; i++) {
     vector<double> sum(7 * 150000 / bin_sec / 10 + 10, 0);
@@ -119,28 +159,25 @@ void gen_summed(double datetime, vector<string> filenames, int bin_sec, vector<d
   }
   sp_time.resize(7 * 150000 / bin_sec / 10 + 10);
 
-  time_t time_start = datetime; 
+  time_t time_start = datetime;
 
   vector<double> sumi(5, 0);
-  double time_diff, prev_stored;
+  double time_diff, prev_stored = 0;
   int ind = 0, prev_i = 0;
-  
-  vector<vector<double>> anys(5); 
+
+  vector<vector<double>> anys(5);
   vector<time_t> times;
 
   for (auto file: filenames) {
-    
+
     read_st(file.c_str(), anys, times);
 
-    for (int i = 0; i < anys[0].size(); i++) {
-      
+    for (int i = 0; i < (int)anys[0].size(); i++) {
+
       if (times[i] - time_start >= bin_sec) {
         if (i > prev_i)
-          // 1 ev / 0.1s, time_diffは1秒単位なのでカウント数の差分を1 / 10にする
-          // 10 ではなく10. にしないと暗黙裡にintに型変換されてしまう
           time_diff = (i - prev_i) / 10.;
-        else 
-          // 一つ前のファイルのvector sizeを足して引き算
+        else
           time_diff = (prev_stored + i - prev_i) / 10.;
 
         for (int j = 0; j < 5; j++) {
@@ -155,7 +192,7 @@ void gen_summed(double datetime, vector<string> filenames, int bin_sec, vector<d
         prev_i = i;
         ind++;
       }
-      
+
       for (int j = 0; j < 5; j++)
         sumi[j] += anys[j][i];
     }
@@ -163,13 +200,13 @@ void gen_summed(double datetime, vector<string> filenames, int bin_sec, vector<d
   }
 
   for (int i = 0; i < 5; i++) {
-    sums[i].resize(ind - 1);
+    sums[i].resize(ind > 0 ? ind - 1 : 0);
   }
-  sp_time.resize(ind - 1);
+  sp_time.resize(ind > 0 ? ind - 1 : 0);
 }
 
 void plot(int anyi, double datetime, double bin_sec, vector<double> times, vector<double> data) {
-  
+
   const int colors[5] = {
     kRed, 8, kBlue, kMagenta + 1, kCyan
   };
@@ -181,9 +218,9 @@ void plot(int anyi, double datetime, double bin_sec, vector<double> times, vecto
   double init_time = datetime;
   double end_time = datetime + 24. * 3600.;
 
-  string title = "Any " + to_string(anyi + 1) + " " + TDatime(int(init_time)).AsSQLString(); 
+  string title = "Any " + to_string(anyi + 1) + " " + TDatime(int(init_time)).AsSQLString();
   if (anyi == 4)
-    title = "Clustered Any " + to_string(2) + " " + TDatime(int(init_time)).AsSQLString(); 
+    title = "Clustered Any " + to_string(2) + " " + TDatime(int(init_time)).AsSQLString();
   title = title.substr(0, title.size() - 9);
   title = title + " per " + to_string(int(bin_sec)) + " seconds";
 
@@ -208,19 +245,19 @@ void plot(int anyi, double datetime, double bin_sec, vector<double> times, vecto
 }
 
 void anyi_per_min(double bin_sec, string date) {
-  
+
   string mod_date = "20" + date + " 00:00:00";
   string dir_date = date.substr(0, 2) + date.substr(3, 2) + date.substr(6, 2);
   double init_time = TDatime(mod_date.c_str()).Convert();
 
-  vector<vector<double>> summed(4);
+  vector<vector<double>> summed(5);
   vector<double> bin_time;
   vector<string> filenames = gen_stnames(init_time);
-  
+
   string output_fn = "anyi_" + dir_date + "_" + to_string(int(bin_sec)) + ".png";
   output_fn = "/home/sanchu/monitor///count_pdf/" + dir_date + "/" + output_fn;
 
-  gen_summed(init_time, filenames, bin_sec, bin_time, summed); 
+  gen_summed(init_time, filenames, bin_sec, bin_time, summed);
 
   TCanvas *c = new TCanvas("c1", "Value vs Time Plot", 1600, 1400);
   c->Divide(1, 5);
@@ -233,4 +270,5 @@ void anyi_per_min(double bin_sec, string date) {
   c->Modified();
   c->Update();
   c->SaveAs(output_fn.c_str());
-} 
+}
+
